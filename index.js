@@ -57,7 +57,9 @@ client.once("ready", async () => {
     console.log(`Bot działa 🔥 (${client.user.tag})`);
 
     const commands = [
-        new SlashCommandBuilder().setName("konkurs").setDescription("Tworzy konkurs")
+        new SlashCommandBuilder()
+            .setName("konkurs")
+            .setDescription("Tworzy konkurs")
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -68,7 +70,7 @@ client.once("ready", async () => {
     );
 });
 
-// ===== INTERACTION =====
+// ===== INTERACTIONS =====
 client.on("interactionCreate", async interaction => {
 
     // ===== CREATE =====
@@ -80,16 +82,28 @@ client.on("interactionCreate", async interaction => {
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("name").setLabel("Nazwa").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("name")
+                    .setLabel("Nazwa konkursu")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("winners").setLabel("Wygrywa").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("winners")
+                    .setLabel("Ile osób wygrywa?")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("time").setLabel("Czas (10m/2h)").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("time")
+                    .setLabel("Czas (10m/2h/2d)")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("desc").setLabel("Opis").setStyle(TextInputStyle.Paragraph)
+                new TextInputBuilder()
+                    .setCustomId("desc")
+                    .setLabel("Opis konkursu")
+                    .setStyle(TextInputStyle.Paragraph)
             )
         );
 
@@ -104,14 +118,23 @@ client.on("interactionCreate", async interaction => {
         const duration = parseTime(interaction.fields.getTextInputValue("time"));
         const desc = interaction.fields.getTextInputValue("desc");
 
-        if (!duration) return interaction.reply({ content: "❌ zły czas", ephemeral: true });
+        if (!duration || isNaN(winners))
+            return interaction.reply({ content: "❌ Błędne dane!", ephemeral: true });
 
         const endTime = Date.now() + duration;
 
         const embed = new EmbedBuilder()
             .setTitle(`🎉 ${name}`)
             .setColor("#f1c40f")
-            .setDescription(`👥 0\n⏰ ${formatTime(duration)}\n🏆 ${winners}\n\n${desc}`);
+            .setDescription(
+`✨ ${desc}
+
+━━━━━━━━━━━━━━
+👥 Uczestnicy: 0
+🏆 Wygrywa: ${winners}
+⏰ Zostało: ${formatTime(duration)}
+━━━━━━━━━━━━━━`
+            );
 
         const button = new ButtonBuilder()
             .setCustomId(`join_${name}`)
@@ -132,13 +155,13 @@ client.on("interactionCreate", async interaction => {
             desc
         };
 
-        // ===== REAL TIME TIMER =====
+        // ===== TIMER =====
         const interval = setInterval(async () => {
-
             const k = konkursy[name];
             if (!k) return clearInterval(interval);
 
             const left = k.endTime - Date.now();
+
             if (left <= 0) {
                 clearInterval(interval);
                 return endKonkurs(name);
@@ -148,18 +171,23 @@ client.on("interactionCreate", async interaction => {
                 .setTitle(`🎉 ${name}`)
                 .setColor(left < 60000 ? "#e74c3c" : "#f1c40f")
                 .setDescription(
-                    `👥 ${k.participants.length}\n⏰ ${formatTime(left)}\n🏆 ${k.winners}\n\n${desc}`
+`✨ ${desc}
+
+━━━━━━━━━━━━━━
+👥 Uczestnicy: ${k.participants.length}
+🏆 Wygrywa: ${k.winners}
+⏰ Zostało: ${formatTime(left)}
+━━━━━━━━━━━━━━`
                 );
 
             k.msg.edit({ embeds: [updated] }).catch(() => {});
-
         }, 1000);
     }
 
     // ===== JOIN =====
     if (interaction.isButton()) {
 
-        await interaction.deferUpdate(); // 🔥 FIX NA ERROR
+        await interaction.deferUpdate(); // fix błędu
 
         const [_, name] = interaction.customId.split("_");
         const k = konkursy[name];
@@ -181,7 +209,7 @@ async function endKonkurs(name) {
         .slice(0, k.winners);
 
     await k.msg.channel.send(
-        `🏁 KONIEC\n🏆 ${winners.map(x => `<@${x}>`).join(", ") || "brak"}`
+        `🏁 KONIEC: ${name}\n🏆 Wygrani:\n${winners.map(x => `<@${x}>`).join("\n") || "brak"}`
     );
 
     delete konkursy[name];
