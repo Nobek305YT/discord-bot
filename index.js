@@ -16,19 +16,21 @@ const {
 
 const TOKEN = process.env.TOKEN;
 
-// ✔ INTENTY (NAPRAWIA "BOT NIE REAGUJE")
+if (!TOKEN) {
+    console.error("❌ Brak TOKEN w env!");
+    process.exit(1);
+}
+
 const client = new Client({
     intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
+        GatewayIntentBits.Guilds
     ]
 });
 
 let konkursy = {};
 
 // ===== TIME =====
-function parseTime(input) {
+function parseTime(input = "") {
     const match = input.match(/(\d+)([mhd])/);
     if (!match) return null;
 
@@ -42,6 +44,7 @@ function parseTime(input) {
 }
 
 function formatTime(ms) {
+    if (ms < 0) return "0s";
     if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
     if (ms < 3600000)
         return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
@@ -61,28 +64,36 @@ client.once("ready", async () => {
             .setName("konkurslist")
             .setDescription("Lista uczestników")
             .addStringOption(o =>
-                o.setName("nazwa").setDescription("nazwa").setRequired(true)
+                o.setName("nazwa")
+                    .setDescription("nazwa konkursu")
+                    .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("konkursinfo")
             .setDescription("Info o konkursie")
             .addStringOption(o =>
-                o.setName("nazwa").setDescription("nazwa").setRequired(true)
+                o.setName("nazwa")
+                    .setDescription("nazwa konkursu")
+                    .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("konkursstop")
             .setDescription("Zatrzymaj konkurs")
             .addStringOption(o =>
-                o.setName("nazwa").setDescription("nazwa").setRequired(true)
+                o.setName("nazwa")
+                    .setDescription("nazwa konkursu")
+                    .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("reroll")
-            .setDescription("Nowi wygrani")
+            .setDescription("Losuj zwycięzców")
             .addStringOption(o =>
-                o.setName("nazwa").setDescription("nazwa").setRequired(true)
+                o.setName("nazwa")
+                    .setDescription("nazwa konkursu")
+                    .setRequired(true)
             )
     ].map(c => c.toJSON());
 
@@ -99,7 +110,7 @@ client.once("ready", async () => {
 // ===== INTERACTIONS =====
 client.on("interactionCreate", async interaction => {
 
-    // ================= CREATE MODAL =================
+    // ===== CREATE MODAL =====
     if (interaction.isChatInputCommand() && interaction.commandName === "konkurs") {
 
         const modal = new ModalBuilder()
@@ -136,15 +147,17 @@ client.on("interactionCreate", async interaction => {
         return interaction.showModal(modal);
     }
 
-    // ================= CREATE =================
+    // ===== CREATE =====
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId === "create") {
 
         await interaction.deferReply();
 
-        const name = interaction.fields.getTextInputValue("name").replace(/\s+/g, "_");
-        const winners = parseInt(interaction.fields.getTextInputValue("winners"));
-        const duration = parseTime(interaction.fields.getTextInputValue("time"));
-        const desc = interaction.fields.getTextInputValue("desc");
+        const rawName = interaction.fields.getTextInputValue("name") || "konkurs";
+        const name = rawName.replace(/[^\w]/g, "_");
+
+        const winners = Math.max(1, parseInt(interaction.fields.getTextInputValue("winners")) || 1);
+        const duration = parseTime(interaction.fields.getTextInputValue("time") || "");
+        const desc = interaction.fields.getTextInputValue("desc") || "Brak opisu";
 
         if (!duration)
             return interaction.editReply("❌ zły czas");
@@ -183,7 +196,7 @@ client.on("interactionCreate", async interaction => {
             channel: interaction.channel
         };
 
-        // ================= TIMER =================
+        // ===== TIMER =====
         const interval = setInterval(async () => {
             const k = konkursy[name];
             if (!k) return clearInterval(interval);
@@ -199,7 +212,7 @@ client.on("interactionCreate", async interaction => {
                 .setTitle(`🎉 ${name}`)
                 .setColor(left < 60000 ? "#e74c3c" : "#f1c40f")
                 .setDescription(
-`✨ ${desc}
+`✨ ${k.desc}
 
 🏆 Wygrywa: ${k.winners}
 👥 Uczestnicy: ${k.participants.length}
@@ -208,10 +221,10 @@ client.on("interactionCreate", async interaction => {
                 );
 
             k.msg.edit({ embeds: [updated] }).catch(() => {});
-        }, 10000); // 🔥 stabilnie, bez laga
+        }, 5000);
     }
 
-    // ================= JOIN =================
+    // ===== JOIN =====
     if (interaction.isButton()) {
 
         const name = interaction.customId.split("_")[1];
@@ -228,7 +241,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: "✅ dołączyłeś!", ephemeral: true });
     }
 
-    // ================= LIST =================
+    // ===== LIST =====
     if (interaction.commandName === "konkurslist") {
         const k = konkursy[interaction.options.getString("nazwa")];
 
@@ -241,7 +254,7 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    // ================= INFO =================
+    // ===== INFO =====
     if (interaction.commandName === "konkursinfo") {
         const k = konkursy[interaction.options.getString("nazwa")];
 
@@ -249,8 +262,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({ content: "❌ brak", ephemeral: true });
 
         return interaction.reply({
-            content:
-`🎉 ${k.name}
+            content: `🎉 ${k.name}
 👥 ${k.participants.length}
 🏆 ${k.winners}
 ⏰ ${formatTime(k.endTime - Date.now())}`,
@@ -258,7 +270,7 @@ client.on("interactionCreate", async interaction => {
         });
     }
 
-    // ================= STOP =================
+    // ===== STOP =====
     if (interaction.commandName === "konkursstop") {
         const name = interaction.options.getString("nazwa");
 
@@ -270,7 +282,7 @@ client.on("interactionCreate", async interaction => {
         return interaction.reply({ content: "⛔ zatrzymano", ephemeral: true });
     }
 
-    // ================= REROLL =================
+    // ===== REROLL =====
     if (interaction.commandName === "reroll") {
         const k = konkursy[interaction.options.getString("nazwa")];
 
@@ -278,7 +290,7 @@ client.on("interactionCreate", async interaction => {
             return interaction.reply({ content: "❌ brak", ephemeral: true });
 
         const win = k.participants
-            .sort(() => 0.5 - Math.random())
+            .sort(() => Math.random() - 0.5)
             .slice(0, k.winners);
 
         return interaction.reply({
@@ -293,7 +305,7 @@ async function endKonkurs(name) {
     if (!k) return;
 
     const win = k.participants
-        .sort(() => 0.5 - Math.random())
+        .sort(() => Math.random() - 0.5)
         .slice(0, k.winners);
 
     const embed = new EmbedBuilder()
