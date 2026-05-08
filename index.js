@@ -14,8 +14,6 @@ const {
     SlashCommandBuilder
 } = require("discord.js");
 
-const fs = require("fs");
-
 const TOKEN = process.env.TOKEN;
 
 const client = new Client({
@@ -26,23 +24,10 @@ const client = new Client({
     ]
 });
 
-// ===== DATA =====
+// ================= KONKURSY =================
 let konkursy = {};
-let historia = [];
 
-if (fs.existsSync("konkursy.json")) {
-    konkursy = JSON.parse(fs.readFileSync("konkursy.json"));
-}
-if (fs.existsSync("historia.json")) {
-    historia = JSON.parse(fs.readFileSync("historia.json"));
-}
-
-function save() {
-    fs.writeFileSync("konkursy.json", JSON.stringify(konkursy, null, 2));
-    fs.writeFileSync("historia.json", JSON.stringify(historia, null, 2));
-}
-
-// ===== TIME =====
+// ================= TIME =================
 function parseTime(input) {
     const match = input.match(/(\d+)([mhd])/);
     if (!match) return null;
@@ -53,42 +38,41 @@ function parseTime(input) {
     if (type === "m") return value * 60000;
     if (type === "h") return value * 3600000;
     if (type === "d") return value * 86400000;
+
+    return null;
 }
 
-// ===== READY =====
+// ================= READY =================
 client.once("ready", async () => {
     console.log(`Bot działa 🔥 (${client.user.tag})`);
 
     const commands = [
-        new SlashCommandBuilder().setName("konkurs").setDescription("Tworzy konkurs"),
+        new SlashCommandBuilder()
+            .setName("konkurs")
+            .setDescription("Tworzy konkurs"),
 
         new SlashCommandBuilder()
             .setName("konkurslist")
             .setDescription("Lista uczestników")
             .addStringOption(opt =>
-                opt.setName("nazwa").setRequired(true)
+                opt.setName("id")
+                    .setDescription("ID konkursu")
+                    .setRequired(true)
             ),
 
         new SlashCommandBuilder()
             .setName("konkursusun")
-            .setDescription("Usuń gracza")
+            .setDescription("Usuń gracza z konkursu")
             .addStringOption(opt =>
-                opt.setName("nazwa").setRequired(true)
+                opt.setName("id")
+                    .setDescription("ID konkursu")
+                    .setRequired(true)
             )
             .addUserOption(opt =>
-                opt.setName("gracz").setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("konkursinfo")
-            .setDescription("Info o konkursie")
-            .addStringOption(opt =>
-                opt.setName("nazwa").setRequired(true)
-            ),
-
-        new SlashCommandBuilder()
-            .setName("konkurshistoria")
-            .setDescription("Historia konkursów")
+                opt.setName("gracz")
+                    .setDescription("Gracz")
+                    .setRequired(true)
+            )
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -101,7 +85,7 @@ client.once("ready", async () => {
     console.log("Slash OK ✔");
 });
 
-// ===== INTERACTIONS =====
+// ================= INTERACTIONS =================
 client.on("interactionCreate", async interaction => {
 
     // ===== /KONKURS =====
@@ -113,10 +97,7 @@ client.on("interactionCreate", async interaction => {
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("name").setLabel("Nazwa konkursu").setStyle(TextInputStyle.Short)
-            ),
-            new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("reward").setLabel("Nagroda").setStyle(TextInputStyle.Short)
+                new TextInputBuilder().setCustomId("name").setLabel("Nazwa").setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId("winners").setLabel("Ile wygrywa").setStyle(TextInputStyle.Short)
@@ -136,35 +117,41 @@ client.on("interactionCreate", async interaction => {
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId === "createKonkurs") {
 
         const name = interaction.fields.getTextInputValue("name");
-        const reward = interaction.fields.getTextInputValue("reward");
         const winners = parseInt(interaction.fields.getTextInputValue("winners"));
         const timeInput = interaction.fields.getTextInputValue("time");
         const desc = interaction.fields.getTextInputValue("desc");
 
-        const duration = parseTime(timeInput);
-        if (!duration) return interaction.reply({ content: "❌ Zły format czasu", ephemeral: true });
+        if (isNaN(winners) || winners <= 0) {
+            return interaction.reply({ content: "❌ Zła liczba zwycięzców", ephemeral: true });
+        }
 
+        const duration = parseTime(timeInput);
+        if (!duration) {
+            return interaction.reply({ content: "❌ Zły format czasu (np. 10m / 2h / 1d)", ephemeral: true });
+        }
+
+        const id = Date.now().toString();
         const endTime = Date.now() + duration;
 
         const embed = new EmbedBuilder()
             .setTitle(`🎉 ${name}`)
             .setDescription(
-`╭━━━━━━━━━━━━━━━━━━━━╮
-🎁 **Nagroda:** ${reward}
-🏆 **Wygrywa:** ${winners}
-👥 **Uczestnicy:** 0
-⏰ **Czas:** ${timeInput}
-╰━━━━━━━━━━━━━━━━━━━━╯
+`✨ **${desc}**
 
-✨ ${desc}
-🔥 **Status: TRWA**`
+🆔 ID: **${id}**
+
+╭🏆 Wygrywa: **${winners}**
+├👥 Uczestnicy: **0**
+├⏰ Czas: **${timeInput}**
+╰🔥 Status: **TRWA**`
             )
             .setColor("#FFD700")
-            .setFooter({ text: "Kliknij aby dołączyć 🎯" })
+            .setThumbnail(client.user.displayAvatarURL())
+            .setFooter({ text: "Kliknij przycisk aby dołączyć 🎯" })
             .setTimestamp();
 
         const button = new ButtonBuilder()
-            .setCustomId(`join_${name}`)
+            .setCustomId(`join_${id}`)
             .setLabel("🎯 Dołącz")
             .setStyle(ButtonStyle.Success);
 
@@ -174,28 +161,29 @@ client.on("interactionCreate", async interaction => {
             fetchReply: true
         });
 
-        konkursy[name] = {
-            reward,
+        konkursy[id] = {
+            name,
             participants: [],
             winners,
             endTime,
+            msg,
             desc,
-            channelId: interaction.channel.id
+            channel: interaction.channel
         };
 
-        save();
-
-        // TIMER
+        // ===== TIMER =====
         const interval = setInterval(async () => {
-            const k = konkursy[name];
+            const k = konkursy[id];
             if (!k) return clearInterval(interval);
 
             const left = k.endTime - Date.now();
             if (left <= 0) return;
 
             let timeText;
-            if (left < 60000) timeText = `${Math.floor(left / 1000)}s`;
-            else if (left < 3600000) {
+
+            if (left < 60000) {
+                timeText = `${Math.floor(left / 1000)}s`;
+            } else if (left < 3600000) {
                 const m = Math.floor(left / 60000);
                 const s = Math.floor((left % 60000) / 1000);
                 timeText = `${m}m ${s}s`;
@@ -206,110 +194,119 @@ client.on("interactionCreate", async interaction => {
             }
 
             const updated = new EmbedBuilder()
-                .setTitle(`🎉 ${name}`)
+                .setTitle(`🎉 ${k.name}`)
                 .setDescription(
-`🎁 ${reward}
-👥 ${k.participants.length} osób
-⏰ ${timeText}
-🏆 ${winners}
+`✨ **${k.desc}**
 
-${desc}
-🔥 TRWA`
+🆔 ID: **${id}**
+
+╭🏆 Wygrywa: **${k.winners}**
+├👥 Uczestnicy: **${k.participants.length}**
+├⏰ Zostało: **${timeText}**
+╰🔥 Status: **TRWA**`
                 )
-                .setColor("#FFD700");
+                .setColor("#FFD700")
+                .setTimestamp();
 
-            msg.edit({ embeds: [updated] }).catch(() => {});
-        }, 1000);
+            k.msg.edit({ embeds: [updated] }).catch(() => {});
+        }, 5000);
 
-        // END
+        // ===== END =====
         setTimeout(async () => {
-            const k = konkursy[name];
+            const k = konkursy[id];
             if (!k) return;
 
             const win = k.participants
                 .sort(() => 0.5 - Math.random())
                 .slice(0, k.winners);
 
-            historia.push({ name, winners: win });
-            save();
+            const endEmbed = new EmbedBuilder()
+                .setTitle("🏁 KONKURS ZAKOŃCZONY")
+                .setDescription(
+`🎉 **${k.name}**
 
-            const channel = await client.channels.fetch(k.channelId);
+🆔 ID: **${id}**
 
-            await channel.send(
-                `🏁 KONIEC **${name}**\n🏆 ${win.map(x => `<@${x}>`).join(", ") || "brak"}`
+🏆 Wygrani:
+${win.map(x => `<@${x}>`).join("\n") || "brak"}
+
+👥 Uczestników: ${k.participants.length}
+🔥 Status: **ZAKOŃCZONY**`
+                )
+                .setColor("Red")
+                .setTimestamp();
+
+            try {
+                await k.channel.send({ embeds: [endEmbed] });
+            } catch {}
+
+            // disable button
+            const disabledRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setLabel("Konkurs zakończony")
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(true)
             );
 
-            delete konkursy[name];
-            save();
+            k.msg.edit({ components: [disabledRow] }).catch(() => {});
+
+            delete konkursy[id];
 
         }, duration);
     }
 
-    // JOIN
+    // ===== JOIN =====
     if (interaction.isButton()) {
 
-        const [_, name] = interaction.customId.split("_");
-        const k = konkursy[name];
+        const [action, id] = interaction.customId.split("_");
+        const k = konkursy[id];
         if (!k) return;
 
-        if (k.participants.includes(interaction.user.id)) {
-            return interaction.reply({ content: "Już jesteś 😏", ephemeral: true });
+        if (action !== "join") return;
+
+        const userId = interaction.user.id;
+
+        if (k.participants.includes(userId)) {
+            return interaction.reply({
+                content: "❌ Już jesteś w konkursie",
+                ephemeral: true
+            });
         }
 
-        k.participants.push(interaction.user.id);
-        save();
+        k.participants.push(userId);
 
-        return interaction.reply({ content: "Dołączyłeś!", ephemeral: true });
+        return interaction.reply({
+            content: "✅ Dołączyłeś!",
+            ephemeral: true
+        });
     }
 
-    // LIST
+    // ===== LIST =====
     if (interaction.isChatInputCommand() && interaction.commandName === "konkurslist") {
-        const name = interaction.options.getString("nazwa");
-        const k = konkursy[name];
 
-        if (!k) return interaction.reply({ content: "❌ Brak", ephemeral: true });
+        const id = interaction.options.getString("id");
+        const k = konkursy[id];
+
+        if (!k) return interaction.reply({ content: "❌ Brak konkursu", ephemeral: true });
 
         return interaction.reply({
-            content: k.participants.map(x => `<@${x}>`).join("\n") || "brak",
+            content:
+                `📋 **${k.name}**\n` +
+                (k.participants.map(x => `<@${x}>`).join("\n") || "brak"),
             ephemeral: true
         });
     }
 
-    // INFO
-    if (interaction.isChatInputCommand() && interaction.commandName === "konkursinfo") {
-        const name = interaction.options.getString("nazwa");
-        const k = konkursy[name];
-
-        if (!k) return interaction.reply({ content: "❌ Brak", ephemeral: true });
-
-        return interaction.reply({
-            content: `🎉 ${name}\n🎁 ${k.reward}\n👥 ${k.participants.length}`,
-            ephemeral: true
-        });
-    }
-
-    // HISTORIA
-    if (interaction.isChatInputCommand() && interaction.commandName === "konkurshistoria") {
-
-        if (historia.length === 0)
-            return interaction.reply("Brak historii");
-
-        return interaction.reply(
-            historia.map(x => `🎉 ${x.name}`).join("\n")
-        );
-    }
-
-    // USUŃ
+    // ===== USUŃ =====
     if (interaction.isChatInputCommand() && interaction.commandName === "konkursusun") {
 
-        const name = interaction.options.getString("nazwa");
+        const id = interaction.options.getString("id");
         const user = interaction.options.getUser("gracz");
 
-        const k = konkursy[name];
-        if (!k) return interaction.reply({ content: "❌ Brak", ephemeral: true });
+        const k = konkursy[id];
+        if (!k) return interaction.reply({ content: "❌ Brak konkursu", ephemeral: true });
 
         k.participants = k.participants.filter(x => x !== user.id);
-        save();
 
         return interaction.reply({
             content: `✅ Usunięto ${user.tag}`,
@@ -318,5 +315,5 @@ ${desc}
     }
 });
 
-// START
+// ================= START =================
 client.login(TOKEN);
