@@ -17,9 +17,7 @@ const {
 const TOKEN = process.env.TOKEN;
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds
-    ]
+    intents: [GatewayIntentBits.Guilds]
 });
 
 let konkursy = {};
@@ -39,14 +37,9 @@ function parseTime(input) {
 
 function formatTime(ms) {
     if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
-    if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000)/1000)}s`;
-    return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000)/60000)}m`;
-}
-
-function status(k) {
-    if (!k) return "⚪";
-    if (Date.now() >= k.endTime) return "🔴 ZAKOŃCZONY";
-    return "🟢 TRWA";
+    if (ms < 3600000)
+        return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+    return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
 }
 
 // ===== READY =====
@@ -90,7 +83,7 @@ client.once("ready", async () => {
 // ===== INTERACTIONS =====
 client.on("interactionCreate", async interaction => {
 
-    // ===== CREATE =====
+    // ===== /KONKURS =====
     if (interaction.isChatInputCommand() && interaction.commandName === "konkurs") {
 
         const modal = new ModalBuilder()
@@ -115,22 +108,24 @@ client.on("interactionCreate", async interaction => {
         return interaction.showModal(modal);
     }
 
-    // ===== MODAL =====
+    // ===== CREATE =====
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId === "create") {
+
+        await interaction.deferReply();
 
         const name = interaction.fields.getTextInputValue("name");
         const winners = parseInt(interaction.fields.getTextInputValue("winners"));
         const duration = parseTime(interaction.fields.getTextInputValue("time"));
         const desc = interaction.fields.getTextInputValue("desc");
 
-        if (!duration) return interaction.reply({ content: "❌ zły czas", ephemeral: true });
+        if (!duration)
+            return interaction.editReply("❌ zły czas");
 
         const endTime = Date.now() + duration;
 
         const embed = new EmbedBuilder()
             .setTitle(`🎉 ${name}`)
             .setColor("#f1c40f")
-            .setThumbnail(client.user.displayAvatarURL())
             .setDescription(
 `✨ **${desc}**
 
@@ -140,19 +135,16 @@ client.on("interactionCreate", async interaction => {
 ⏰ Zostało: ${formatTime(duration)}
 🔥 Status: 🟢 TRWA
 ━━━━━━━━━━━━━━`
-            )
-            .setFooter({ text: "Kliknij Dołącz 🎯" })
-            .setTimestamp();
+            );
 
         const button = new ButtonBuilder()
             .setCustomId(`join_${name}`)
             .setLabel("🎯 Dołącz")
             .setStyle(ButtonStyle.Success);
 
-        const msg = await interaction.reply({
+        const msg = await interaction.editReply({
             embeds: [embed],
-            components: [new ActionRowBuilder().addComponents(button)],
-            fetchReply: true
+            components: [new ActionRowBuilder().addComponents(button)]
         });
 
         konkursy[name] = {
@@ -165,7 +157,7 @@ client.on("interactionCreate", async interaction => {
             channel: interaction.channel
         };
 
-        // ===== REALTIME TIMER =====
+        // ===== TIMER REALTIME =====
         const interval = setInterval(async () => {
             const k = konkursy[name];
             if (!k) return clearInterval(interval);
@@ -180,7 +172,6 @@ client.on("interactionCreate", async interaction => {
             const updated = new EmbedBuilder()
                 .setTitle(`🎉 ${name}`)
                 .setColor(left < 60000 ? "#e74c3c" : "#f1c40f")
-                .setThumbnail(client.user.displayAvatarURL())
                 .setDescription(
 `✨ **${desc}**
 
@@ -190,8 +181,7 @@ client.on("interactionCreate", async interaction => {
 ⏰ Zostało: ${formatTime(left)}
 🔥 Status: 🟢 TRWA
 ━━━━━━━━━━━━━━`
-                )
-                .setTimestamp();
+                );
 
             k.msg.edit({ embeds: [updated] }).catch(() => {});
         }, 1000);
@@ -200,21 +190,24 @@ client.on("interactionCreate", async interaction => {
     // ===== JOIN =====
     if (interaction.isButton()) {
 
+        await interaction.deferReply({ ephemeral: true });
+
         const name = interaction.customId.split("_")[1];
         const k = konkursy[name];
-        if (!k) return;
+        if (!k) return interaction.editReply("❌ konkurs nie istnieje");
 
         if (k.participants.includes(interaction.user.id)) {
-            return interaction.reply({ content: "❌ już jesteś", ephemeral: true });
+            return interaction.editReply("❌ już jesteś");
         }
 
         k.participants.push(interaction.user.id);
 
-        return interaction.reply({ content: "✅ dołączyłeś!", ephemeral: true });
+        return interaction.editReply("✅ dołączyłeś!");
     }
 
     // ===== LIST =====
-    if (interaction.commandName === "konkurslist") {
+    if (interaction.isChatInputCommand() && interaction.commandName === "konkurslist") {
+
         const k = konkursy[interaction.options.getString("nazwa")];
         if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
 
@@ -225,29 +218,37 @@ client.on("interactionCreate", async interaction => {
     }
 
     // ===== INFO =====
-    if (interaction.commandName === "konkursinfo") {
+    if (interaction.isChatInputCommand() && interaction.commandName === "konkursinfo") {
+
         const k = konkursy[interaction.options.getString("nazwa")];
         if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
 
         return interaction.reply({
-            content: `🎉 ${k.name}\n👥 ${k.participants.length}\n🏆 ${k.winners}\n🔥 ${status(k)}`,
+            content:
+`🎉 ${k.name}
+👥 ${k.participants.length}
+🏆 ${k.winners}
+⏰ ${formatTime(k.endTime - Date.now())}`,
             ephemeral: true
         });
     }
 
     // ===== STOP =====
-    if (interaction.commandName === "konkursstop") {
+    if (interaction.isChatInputCommand() && interaction.commandName === "konkursstop") {
+
         const name = interaction.options.getString("nazwa");
 
         if (!konkursy[name])
             return interaction.reply({ content: "❌ brak", ephemeral: true });
 
         endKonkurs(name);
+
         return interaction.reply({ content: "⛔ zatrzymano", ephemeral: true });
     }
 
     // ===== REROLL =====
-    if (interaction.commandName === "reroll") {
+    if (interaction.isChatInputCommand() && interaction.commandName === "reroll") {
+
         const k = konkursy[interaction.options.getString("nazwa")];
         if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
 
@@ -281,8 +282,7 @@ ${win.map(x => `<@${x}>`).join("\n") || "brak"}
 
 👥 ${k.participants.length}
 🔴 ZAKOŃCZONY`
-        )
-        .setTimestamp();
+        );
 
     await k.channel.send({ embeds: [embed] });
 
