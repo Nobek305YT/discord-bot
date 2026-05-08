@@ -16,8 +16,13 @@ const {
 
 const TOKEN = process.env.TOKEN;
 
+// ✔ WAŻNE INTENTY (NAPRAWIA “BOT NIE REAGUJE”)
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
 });
 
 let konkursy = {};
@@ -33,6 +38,7 @@ function parseTime(input) {
     if (type === "m") return value * 60000;
     if (type === "h") return value * 3600000;
     if (type === "d") return value * 86400000;
+    return null;
 }
 
 function formatTime(ms) {
@@ -47,27 +53,45 @@ client.once("ready", async () => {
     console.log(`Bot działa 🔥 (${client.user.tag})`);
 
     const commands = [
-        new SlashCommandBuilder().setName("konkurs").setDescription("Tworzy konkurs"),
+        new SlashCommandBuilder()
+            .setName("konkurs")
+            .setDescription("Tworzy konkurs"),
 
         new SlashCommandBuilder()
             .setName("konkurslist")
             .setDescription("Lista uczestników")
-            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+            .addStringOption(o =>
+                o.setName("nazwa")
+                    .setDescription("Nazwa konkursu")
+                    .setRequired(true)
+            ),
 
         new SlashCommandBuilder()
             .setName("konkursinfo")
             .setDescription("Info o konkursie")
-            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+            .addStringOption(o =>
+                o.setName("nazwa")
+                    .setDescription("Nazwa konkursu")
+                    .setRequired(true)
+            ),
 
         new SlashCommandBuilder()
             .setName("konkursstop")
             .setDescription("Zatrzymaj konkurs")
-            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+            .addStringOption(o =>
+                o.setName("nazwa")
+                    .setDescription("Nazwa konkursu")
+                    .setRequired(true)
+            ),
 
         new SlashCommandBuilder()
             .setName("reroll")
-            .setDescription("Losuj ponownie")
-            .addStringOption(o => o.setName("nazwa").setRequired(true))
+            .setDescription("Losuj ponownie zwycięzców")
+            .addStringOption(o =>
+                o.setName("nazwa")
+                    .setDescription("Nazwa konkursu")
+                    .setRequired(true)
+            )
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -83,7 +107,7 @@ client.once("ready", async () => {
 // ===== INTERACTIONS =====
 client.on("interactionCreate", async interaction => {
 
-    // ================= KONKURS CREATE =================
+    // ================= CREATE =================
     if (interaction.isChatInputCommand() && interaction.commandName === "konkurs") {
 
         const modal = new ModalBuilder()
@@ -92,23 +116,35 @@ client.on("interactionCreate", async interaction => {
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("name").setLabel("Nazwa").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("name")
+                    .setLabel("Nazwa")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("winners").setLabel("Ile osób wygrywa").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("winners")
+                    .setLabel("Ile osób wygrywa")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("time").setLabel("Czas (10m/2h/2d)").setStyle(TextInputStyle.Short)
+                new TextInputBuilder()
+                    .setCustomId("time")
+                    .setLabel("Czas (10m/2h/2d)")
+                    .setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId("desc").setLabel("Opis").setStyle(TextInputStyle.Paragraph)
+                new TextInputBuilder()
+                    .setCustomId("desc")
+                    .setLabel("Opis")
+                    .setStyle(TextInputStyle.Paragraph)
             )
         );
 
         return interaction.showModal(modal);
     }
 
-    // ================= CREATE =================
+    // ================= MODAL =================
     if (interaction.type === InteractionType.ModalSubmit && interaction.customId === "create") {
 
         await interaction.deferReply();
@@ -180,26 +216,22 @@ client.on("interactionCreate", async interaction => {
                 );
 
             k.msg.edit({ embeds: [updated] }).catch(() => {});
-        }, 1000);
+        }, 5000); // ✔ mniej lagów niż 1s
     }
 
     // ================= JOIN =================
     if (interaction.isButton()) {
 
-        await interaction.deferReply({ ephemeral: true });
-
         const name = interaction.customId.split("_")[1];
         const k = konkursy[name];
-
-        if (!k)
-            return interaction.editReply("❌ konkurs nie istnieje");
+        if (!k) return interaction.reply({ content: "❌ brak konkursu", ephemeral: true });
 
         if (k.participants.includes(interaction.user.id))
-            return interaction.editReply("❌ już jesteś w konkursie");
+            return interaction.reply({ content: "❌ już jesteś", ephemeral: true });
 
         k.participants.push(interaction.user.id);
 
-        return interaction.editReply("✅ dołączyłeś!");
+        return interaction.reply({ content: "✅ dołączyłeś!", ephemeral: true });
     }
 
     // ================= LIST =================
@@ -259,7 +291,7 @@ client.on("interactionCreate", async interaction => {
     }
 });
 
-// ===== END =====
+// ===== END KONKURSU =====
 async function endKonkurs(name) {
     const k = konkursy[name];
     if (!k) return;
