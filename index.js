@@ -78,7 +78,7 @@ client.once("ready", async () => {
                 o.setName("nazwa").setDescription("nazwa").setRequired(true)
             ),
 
-        new SlashCommandBuilder(
+        new SlashCommandBuilder()
             .setName("reroll")
             .setDescription("Nowi wygrani")
             .addStringOption(o =>
