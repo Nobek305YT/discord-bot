@@ -17,9 +17,7 @@ const {
 const TOKEN = process.env.TOKEN;
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds
-    ]
+    intents: [GatewayIntentBits.Guilds]
 });
 
 let konkursy = {};
@@ -29,48 +27,62 @@ function parseTime(input) {
     const match = input.match(/(\d+)([mhd])/);
     if (!match) return null;
 
-    const value = parseInt(match[1]);
-    const type = match[2];
+    const v = parseInt(match[1]);
+    const t = match[2];
 
-    if (type === "m") return value * 60000;
-    if (type === "h") return value * 3600000;
-    if (type === "d") return value * 86400000;
+    if (t === "m") return v * 60000;
+    if (t === "h") return v * 3600000;
+    if (t === "d") return v * 86400000;
 }
 
-// ===== FORMAT TIME =====
 function formatTime(ms) {
     if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
-
-    if (ms < 3600000) {
-        const m = Math.floor(ms / 60000);
-        const s = Math.floor((ms % 60000) / 1000);
-        return `${m}m ${s}s`;
-    }
-
-    const h = Math.floor(ms / 3600000);
-    const m = Math.floor((ms % 3600000) / 60000);
-    return `${h}h ${m}m`;
+    if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000)/1000)}s`;
+    return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000)/60000)}m`;
 }
 
 // ===== READY =====
 client.once("ready", async () => {
-    console.log(`Bot działa 🔥 (${client.user.tag})`);
+    console.log(`Bot działa 🔥 ${client.user.tag}`);
 
     const commands = [
+        new SlashCommandBuilder().setName("konkurs").setDescription("Tworzy konkurs"),
+
         new SlashCommandBuilder()
-            .setName("konkurs")
-            .setDescription("Tworzy konkurs")
+            .setName("konkurslist")
+            .setDescription("Lista uczestników")
+            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName("konkursusun")
+            .setDescription("Usuń gracza")
+            .addStringOption(o => o.setName("nazwa").setRequired(true))
+            .addUserOption(o => o.setName("gracz").setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName("konkursinfo")
+            .setDescription("Info o konkursie")
+            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName("konkursreroll")
+            .setDescription("Losuj ponownie")
+            .addStringOption(o => o.setName("nazwa").setRequired(true)),
+
+        new SlashCommandBuilder()
+            .setName("konkursstop")
+            .setDescription("Kończy konkurs")
+            .addStringOption(o => o.setName("nazwa").setRequired(true))
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-    await rest.put(
-        Routes.applicationCommands(client.user.id),
-        { body: commands }
-    );
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+
+    console.log("✔ Komendy wgrane");
 });
 
-// ===== INTERACTIONS =====
+// ===== INTERACTION =====
 client.on("interactionCreate", async interaction => {
 
     // ===== CREATE =====
@@ -82,28 +94,16 @@ client.on("interactionCreate", async interaction => {
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId("name")
-                    .setLabel("Nazwa konkursu")
-                    .setStyle(TextInputStyle.Short)
+                new TextInputBuilder().setCustomId("name").setLabel("Nazwa").setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId("winners")
-                    .setLabel("Ile osób wygrywa?")
-                    .setStyle(TextInputStyle.Short)
+                new TextInputBuilder().setCustomId("winners").setLabel("Ile wygrywa").setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId("time")
-                    .setLabel("Czas (10m/2h/2d)")
-                    .setStyle(TextInputStyle.Short)
+                new TextInputBuilder().setCustomId("time").setLabel("Czas (10m/2h)").setStyle(TextInputStyle.Short)
             ),
             new ActionRowBuilder().addComponents(
-                new TextInputBuilder()
-                    .setCustomId("desc")
-                    .setLabel("Opis konkursu")
-                    .setStyle(TextInputStyle.Paragraph)
+                new TextInputBuilder().setCustomId("desc").setLabel("Opis").setStyle(TextInputStyle.Paragraph)
             )
         );
 
@@ -118,27 +118,18 @@ client.on("interactionCreate", async interaction => {
         const duration = parseTime(interaction.fields.getTextInputValue("time"));
         const desc = interaction.fields.getTextInputValue("desc");
 
-        if (!duration || isNaN(winners))
-            return interaction.reply({ content: "❌ Błędne dane!", ephemeral: true });
+        if (!duration) return interaction.reply({ content: "❌ zły czas", ephemeral: true });
 
         const endTime = Date.now() + duration;
 
         const embed = new EmbedBuilder()
             .setTitle(`🎉 ${name}`)
-            .setColor("#f1c40f")
-            .setDescription(
-`✨ ${desc}
-
-━━━━━━━━━━━━━━
-👥 Uczestnicy: 0
-🏆 Wygrywa: ${winners}
-⏰ Zostało: ${formatTime(duration)}
-━━━━━━━━━━━━━━`
-            );
+            .setColor("Gold")
+            .setDescription(`👥 0\n🏆 ${winners}\n⏰ ${formatTime(duration)}\n\n${desc}`);
 
         const button = new ButtonBuilder()
             .setCustomId(`join_${name}`)
-            .setLabel("🎯 Dołącz")
+            .setLabel("Dołącz")
             .setStyle(ButtonStyle.Success);
 
         const msg = await interaction.reply({
@@ -147,55 +138,89 @@ client.on("interactionCreate", async interaction => {
             fetchReply: true
         });
 
-        konkursy[name] = {
-            participants: [],
-            winners,
-            endTime,
-            msg,
-            desc
-        };
+        konkursy[name] = { participants: [], winners, endTime, msg, desc };
 
-        // ===== TIMER =====
-        const interval = setInterval(async () => {
+        // TIMER
+        const interval = setInterval(() => {
             const k = konkursy[name];
             if (!k) return clearInterval(interval);
 
             const left = k.endTime - Date.now();
-
             if (left <= 0) {
                 clearInterval(interval);
                 return endKonkurs(name);
             }
 
-            const updated = new EmbedBuilder()
+            const embed = new EmbedBuilder()
                 .setTitle(`🎉 ${name}`)
-                .setColor(left < 60000 ? "#e74c3c" : "#f1c40f")
-                .setDescription(
-`✨ ${desc}
+                .setDescription(`👥 ${k.participants.length}\n🏆 ${k.winners}\n⏰ ${formatTime(left)}\n\n${desc}`)
+                .setColor(left < 60000 ? "Red" : "Gold");
 
-━━━━━━━━━━━━━━
-👥 Uczestnicy: ${k.participants.length}
-🏆 Wygrywa: ${k.winners}
-⏰ Zostało: ${formatTime(left)}
-━━━━━━━━━━━━━━`
-                );
-
-            k.msg.edit({ embeds: [updated] }).catch(() => {});
+            k.msg.edit({ embeds: [embed] }).catch(()=>{});
         }, 1000);
     }
 
-    // ===== JOIN =====
+    // ===== BUTTON =====
     if (interaction.isButton()) {
+        await interaction.deferUpdate();
 
-        await interaction.deferUpdate(); // fix błędu
-
-        const [_, name] = interaction.customId.split("_");
+        const name = interaction.customId.split("_")[1];
         const k = konkursy[name];
         if (!k) return;
 
         if (!k.participants.includes(interaction.user.id)) {
             k.participants.push(interaction.user.id);
         }
+    }
+
+    // ===== LIST =====
+    if (interaction.commandName === "konkurslist") {
+        const k = konkursy[interaction.options.getString("nazwa")];
+        if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
+
+        return interaction.reply({
+            content: k.participants.map(x => `<@${x}>`).join("\n") || "brak",
+            ephemeral: true
+        });
+    }
+
+    // ===== USUN =====
+    if (interaction.commandName === "konkursusun") {
+        const k = konkursy[interaction.options.getString("nazwa")];
+        const user = interaction.options.getUser("gracz");
+
+        if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
+
+        k.participants = k.participants.filter(x => x !== user.id);
+
+        return interaction.reply({ content: "✅ usunięto", ephemeral: true });
+    }
+
+    // ===== INFO =====
+    if (interaction.commandName === "konkursinfo") {
+        const k = konkursy[interaction.options.getString("nazwa")];
+        if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
+
+        return interaction.reply({
+            content: `👥 ${k.participants.length}\n🏆 ${k.winners}`,
+            ephemeral: true
+        });
+    }
+
+    // ===== REROLL =====
+    if (interaction.commandName === "konkursreroll") {
+        const k = konkursy[interaction.options.getString("nazwa")];
+        if (!k) return interaction.reply({ content: "❌ brak", ephemeral: true });
+
+        const win = k.participants.sort(() => 0.5 - Math.random()).slice(0, k.winners);
+
+        return interaction.reply(`🎉 Nowi wygrani:\n${win.map(x => `<@${x}>`).join("\n")}`);
+    }
+
+    // ===== STOP =====
+    if (interaction.commandName === "konkursstop") {
+        const name = interaction.options.getString("nazwa");
+        return endKonkurs(name);
     }
 });
 
@@ -204,13 +229,11 @@ async function endKonkurs(name) {
     const k = konkursy[name];
     if (!k) return;
 
-    const winners = k.participants
+    const win = k.participants
         .sort(() => 0.5 - Math.random())
         .slice(0, k.winners);
 
-    await k.msg.channel.send(
-        `🏁 KONIEC: ${name}\n🏆 Wygrani:\n${winners.map(x => `<@${x}>`).join("\n") || "brak"}`
-    );
+    await k.msg.channel.send(`🏁 KONIEC ${name}\n${win.map(x => `<@${x}>`).join("\n") || "brak"}`);
 
     delete konkursy[name];
 }
